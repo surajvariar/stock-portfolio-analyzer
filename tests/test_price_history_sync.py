@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-import main
-import price_history_sync
+import backend.main as main
+import backend.price_history_sync as price_history_sync
 
 
 def test_incremental_sync_backfills_stocks_without_price_history(monkeypatch):

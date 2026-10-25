@@ -12,16 +12,20 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-from market_hours import drop_incomplete_series
-from recommendation_agent import generate_ollama_recommendation
-from risk_scoring.beta_calculator import beta_risk_score, estimate_beta, to_date_indexed
-from risk_scoring.composite_risk_score import composite_risk_label
-from risk_scoring.liquidity_flagger import (
+from backend.market_hours import drop_incomplete_series
+from backend.recommendation_agent import generate_ollama_recommendation
+from backend.risk_scoring.beta_calculator import (
+    beta_risk_score,
+    estimate_beta,
+    to_date_indexed,
+)
+from backend.risk_scoring.composite_risk_score import composite_risk_label
+from backend.risk_scoring.liquidity_flagger import (
     liquidity_flag,
     liquidity_risk_score,
     median_daily_turnover,
 )
-from risk_scoring.volatility_calculator import (
+from backend.risk_scoring.volatility_calculator import (
     annualized_volatility,
     volatility_risk_score,
 )

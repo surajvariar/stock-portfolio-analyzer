@@ -6,7 +6,7 @@ from typing import Any
 import requests
 import yfinance as yf
 
-from market_hours import drop_incomplete_series
+from backend.market_hours import drop_incomplete_series
 
 NSE_HOME_URL = "https://www.nseindia.com"
 NSE_FII_DII_URL = "https://www.nseindia.com/api/fiidiiTradeReact"

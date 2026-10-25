@@ -5,17 +5,29 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from market_hours import drop_incomplete_bars, drop_incomplete_series, is_bar_final
-from portfolio_aggregation import compute_portfolio_summary, group_weights_pct
-from price_history_sync import normalize_symbol, prices_rebased
-from recommendation_policy import allowed_actions, evaluate_policy, reconcile
-from review_harness import build_review_rows
-from risk_questionnaire import calculate_risk_profile
-from risk_scoring.beta_calculator import beta_risk_score, calculate_beta, estimate_beta, to_date_indexed
-from risk_scoring.liquidity_flagger import liquidity_flag, median_daily_turnover
-from risk_scoring.volatility_calculator import annualized_volatility, volatility_risk_score
-from sentiment.news_sentiment import summarize_headlines
-from sentiment.quant_sentiment import compute_market_sentiment
+from backend.market_hours import (
+    drop_incomplete_bars,
+    drop_incomplete_series,
+    is_bar_final,
+)
+from backend.portfolio_aggregation import compute_portfolio_summary, group_weights_pct
+from backend.price_history_sync import normalize_symbol, prices_rebased
+from backend.recommendation_policy import allowed_actions, evaluate_policy, reconcile
+from backend.review_harness import build_review_rows
+from backend.risk_questionnaire import calculate_risk_profile
+from backend.risk_scoring.beta_calculator import (
+    beta_risk_score,
+    calculate_beta,
+    estimate_beta,
+    to_date_indexed,
+)
+from backend.risk_scoring.liquidity_flagger import liquidity_flag, median_daily_turnover
+from backend.risk_scoring.volatility_calculator import (
+    annualized_volatility,
+    volatility_risk_score,
+)
+from backend.sentiment.news_sentiment import summarize_headlines
+from backend.sentiment.quant_sentiment import compute_market_sentiment
 
 IST = ZoneInfo("Asia/Kolkata")
 

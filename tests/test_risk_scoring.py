@@ -4,10 +4,13 @@ from math import isclose
 import pandas as pd
 from fastapi.testclient import TestClient
 
-import main
-from risk_questionnaire import calculate_risk_profile
-from risk_scoring.composite_risk_score import composite_risk_label, composite_risk_score
-from risk_scoring.market_cap_classifier import classify_market_cap_rank
+import backend.main as main
+from backend.risk_questionnaire import calculate_risk_profile
+from backend.risk_scoring.composite_risk_score import (
+    composite_risk_label,
+    composite_risk_score,
+)
+from backend.risk_scoring.market_cap_classifier import classify_market_cap_rank
 
 
 def test_calculate_risk_profile_assigns_expected_tier():

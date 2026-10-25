@@ -1,11 +1,14 @@
 
 from fastapi.testclient import TestClient
 
-import main
-from review_harness import build_review_rows
-from sentiment import compute_market_sentiment, summarize_headlines
-from sentiment.market_data import fetch_fii_dii_flows
-from sentiment.news_sentiment import HeadlineAssessment, summarize_news_with_ollama
+import backend.main as main
+from backend.review_harness import build_review_rows
+from backend.sentiment import compute_market_sentiment, summarize_headlines
+from backend.sentiment.market_data import fetch_fii_dii_flows
+from backend.sentiment.news_sentiment import (
+    HeadlineAssessment,
+    summarize_news_with_ollama,
+)
 
 
 def test_compute_market_sentiment_is_bullish_when_market_is_strong():
@@ -74,7 +77,7 @@ def test_fetch_fii_dii_flows_parses_verified_nse_fields(monkeypatch):
         def get(self, *args, **kwargs):
             return FakeResponse()
 
-    monkeypatch.setattr("sentiment.market_data._nse_session", lambda: FakeSession())
+    monkeypatch.setattr("backend.sentiment.market_data._nse_session", lambda: FakeSession())
 
     result = fetch_fii_dii_flows()
 
@@ -132,8 +135,8 @@ def test_ollama_invalid_news_label_uses_deterministic_label(monkeypatch):
             assert schema is HeadlineAssessment
             return FakeStructuredModel()
 
-    monkeypatch.setattr("sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
-    monkeypatch.setattr("sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: None)
+    monkeypatch.setattr("backend.sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
+    monkeypatch.setattr("backend.sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: None)
 
     result = summarize_news_with_ollama(
         [{"title": "Shares rise with strong gains", "content": "Buying activity increased."}]
@@ -158,8 +161,8 @@ def test_ollama_structured_news_label_maps_to_fixed_score(monkeypatch):
             assert method == "json_mode" and include_raw is True
             return FakeStructuredModel()
 
-    monkeypatch.setattr("sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
-    monkeypatch.setattr("sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: None)
+    monkeypatch.setattr("backend.sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
+    monkeypatch.setattr("backend.sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: None)
 
     result = summarize_news_with_ollama([{"title": "Headline", "content": "Snippet"}])
 
@@ -187,8 +190,8 @@ def test_news_sentiment_passes_langfuse_config(monkeypatch):
             return FakeStructuredModel()
 
     expected_config = {"callbacks": [object()], "run_name": "news-sentiment"}
-    monkeypatch.setattr("sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
-    monkeypatch.setattr("sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: expected_config)
+    monkeypatch.setattr("backend.sentiment.news_sentiment.create_chat_ollama", lambda temperature: FakeChatModel())
+    monkeypatch.setattr("backend.sentiment.news_sentiment.langfuse_callback_config", lambda trace_name: expected_config)
 
     result = summarize_news_with_ollama([{"title": "Headline", "content": "Snippet"}])
 

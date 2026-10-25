@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from risk_questionnaire import TIER_RISK_LIMITS
+from backend.risk_questionnaire import TIER_RISK_LIMITS
 
 # SELL only when the stock is clearly above the investor's limit.
 SELL_EXCESS_POINTS = 15.0

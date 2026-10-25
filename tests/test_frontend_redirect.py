@@ -1,6 +1,6 @@
 import pytest
 
-from frontend_redirect import build_redirect_url, safe_return_url
+from backend.frontend_redirect import build_redirect_url, safe_return_url
 
 
 @pytest.mark.parametrize(

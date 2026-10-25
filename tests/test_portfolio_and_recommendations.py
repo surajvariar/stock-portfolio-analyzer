@@ -5,16 +5,16 @@ from types import ModuleType
 import pandas as pd
 from fastapi.testclient import TestClient
 
-import llm_client
-import main
-from etf_analyzer import (
+import backend.llm_client as llm_client
+import backend.main as main
+from backend.etf_analyzer import (
     infer_etf_asset_class,
     normalize_nse_etf,
     recommend_etf,
     score_equity_etf,
 )
-from portfolio_aggregation import compute_portfolio_summary
-from recommendation_agent import (
+from backend.portfolio_aggregation import compute_portfolio_summary
+from backend.recommendation_agent import (
     build_ollama_prompt,
     choose_recommendation,
     generate_ollama_recommendation,
@@ -229,7 +229,7 @@ def test_langfuse_config_sets_trace_metadata(monkeypatch):
 
 
 def test_recommendation_generation_uses_validated_action_and_python_snapshot(monkeypatch):
-    from recommendation_agent import RecommendationOutput
+    from backend.recommendation_agent import RecommendationOutput
 
     class FakeStructuredModel:
         def invoke(self, messages, config=None):
@@ -241,8 +241,8 @@ def test_recommendation_generation_uses_validated_action_and_python_snapshot(mon
             assert schema is RecommendationOutput
             return FakeStructuredModel()
 
-    monkeypatch.setattr("recommendation_agent.create_chat_ollama", lambda temperature: FakeChatModel())
-    monkeypatch.setattr("recommendation_agent.langfuse_callback_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("backend.recommendation_agent.create_chat_ollama", lambda temperature: FakeChatModel())
+    monkeypatch.setattr("backend.recommendation_agent.langfuse_callback_config", lambda *args, **kwargs: None)
     metrics = {"composite_score": 52.0, "market_sentiment_label": "Neutral"}
 
     result = generate_ollama_recommendation("TCS", metrics, "Moderate")
@@ -267,8 +267,8 @@ def test_recommendation_generation_passes_langfuse_config(monkeypatch):
             return FakeStructuredModel()
 
     expected_config = {"callbacks": [object()], "run_name": "recommendation-TCS"}
-    monkeypatch.setattr("recommendation_agent.create_chat_ollama", lambda temperature: FakeChatModel())
-    monkeypatch.setattr("recommendation_agent.langfuse_callback_config", lambda *args, **kwargs: expected_config)
+    monkeypatch.setattr("backend.recommendation_agent.create_chat_ollama", lambda temperature: FakeChatModel())
+    monkeypatch.setattr("backend.recommendation_agent.langfuse_callback_config", lambda *args, **kwargs: expected_config)
 
     generate_ollama_recommendation("TCS", {"composite_score": 52}, "Moderate", trace_session_id="41")
 

@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from risk_scoring.beta_calculator import to_date_indexed
+from backend.risk_scoring.beta_calculator import to_date_indexed
 
 # Reviews younger than this are noise, not evidence.
 MIN_REVIEW_DAYS = 5

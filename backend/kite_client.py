@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from kiteconnect import KiteConnect
 
-from db import get_latest_kite_access_token
+from backend.db import get_latest_kite_access_token
 
 load_dotenv()
 

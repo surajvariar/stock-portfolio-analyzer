@@ -4,14 +4,14 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-import etf_analyzer
-import main
-from etf_analyzer import (
+import backend.etf_analyzer as etf_analyzer
+import backend.main as main
+from backend.etf_analyzer import (
     analyze_equity_etfs,
     normalize_nse_etf,
     score_equity_etf,
 )
-from risk_scoring.beta_calculator import BetaEstimate
+from backend.risk_scoring.beta_calculator import BetaEstimate
 
 
 def test_nse_etf_normalization_keeps_optional_fields_and_small_cap_metadata():

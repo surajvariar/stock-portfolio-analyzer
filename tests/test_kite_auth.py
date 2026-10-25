@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-import kite_client
-import main
+import backend.kite_client as kite_client
+import backend.main as main
 
 
 def test_login_url_uses_kiteconnect_supported_signature(monkeypatch):

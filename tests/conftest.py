@@ -19,8 +19,8 @@ for name in (
     "langchain_ollama",
     "langfuse",
     "tavily",
-    "llm_client",
-    "db",
+    "backend.llm_client",
+    "backend.db",
 ):
     try:
         importlib.import_module(name)

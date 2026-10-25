@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from risk_questionnaire import TIER_RISK_LIMITS
+from backend.risk_questionnaire import TIER_RISK_LIMITS
 
 DEFAULT_TIER = "Balanced"
 

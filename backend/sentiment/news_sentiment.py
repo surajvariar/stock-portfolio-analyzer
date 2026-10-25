@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from llm_client import create_chat_ollama, langfuse_callback_config
+from backend.llm_client import create_chat_ollama, langfuse_callback_config
 
 _WORD_RE = re.compile(r"[a-z]+")
 

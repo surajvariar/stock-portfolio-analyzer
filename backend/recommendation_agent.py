@@ -6,14 +6,14 @@ from typing import Any, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from llm_client import create_chat_ollama, langfuse_callback_config
-from plain_language import (
+from backend.llm_client import create_chat_ollama, langfuse_callback_config
+from backend.plain_language import (
     build_explanation,
     compose,
     plain_facts,
     validate_explanation,
 )
-from recommendation_policy import (
+from backend.recommendation_policy import (
     PolicyDecision,
     allowed_actions,
     evaluate_etf_candidate,

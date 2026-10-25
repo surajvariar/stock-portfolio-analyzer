@@ -81,7 +81,7 @@ Replace your `index.tsx` route with `frontend/index.tsx`. It was type-checked in
 
 ## Plain-language recommendations (stocks and ETFs)
 
-- New `plain_language.py`. Every recommendation is now stored as three short parts - **headline** (what to do), **why**, **what to keep in mind** - in everyday words. No scores, decimals, "volatility", "beta", "sentiment", "liquidity" or "tier".
+- New `backend/plain_language.py`. Every recommendation is now stored as three short parts - **headline** (what to do), **why**, **what to keep in mind** - in everyday words. No scores, decimals, "volatility", "beta", "sentiment", "liquidity" or "tier".
 - The AI model is shown everyday-word facts only ("its price has big ups and downs", "it already makes up about 14% of your investments"), never raw numbers, so it has no jargon to repeat. If its reply still contains technical words, decimals, or is too long, it is replaced by the standard wording (`model_status = ollama_reworded`). The policy still decides the action; the model can only word it.
 - Works for both cases: **holdings** (SELL / INCREASE / HOLD) and **ETFs you do not own** (BUY / WATCH / AVOID). ETF candidates are judged on what adding a small amount (assumed 5%) does to your overall portfolio risk, not on the ETF's risk alone. Overall market mood can hold a BUY back to WATCH for equity ETFs only.
 - ETFs that could not be rated say so in plain words ("There is not enough price history to rate it fairly yet") instead of a technical reason.

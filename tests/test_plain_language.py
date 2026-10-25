@@ -7,15 +7,20 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import recommendation_agent as agent
-from plain_language import (
+import backend.recommendation_agent as agent
+from backend.plain_language import (
     build_explanation,
     compose,
     find_jargon,
     plain_facts,
     validate_explanation,
 )
-from recommendation_policy import evaluate_etf_candidate, evaluate_policy, pro_forma_score, reconcile
+from backend.recommendation_policy import (
+    evaluate_etf_candidate,
+    evaluate_policy,
+    pro_forma_score,
+    reconcile,
+)
 
 STOCK_METRICS = {
     "risk_tier": "Balanced",
@@ -314,8 +319,7 @@ def synthetic_prices(days: int = 300, step: float = 0.001) -> pd.Series:
 
 
 def test_score_equity_etf_returns_plain_wording(monkeypatch):
-    import etf_analyzer
-
+    import backend.etf_analyzer as etf_analyzer
     monkeypatch.setattr(etf_analyzer, "liquidity_flag", lambda turnover: False)
     prices = synthetic_prices()
     market_returns = (synthetic_prices(step=0.002)).pct_change().dropna()
@@ -333,8 +337,7 @@ def test_score_equity_etf_returns_plain_wording(monkeypatch):
 
 
 def test_score_equity_etf_short_history_is_skipped_with_plain_reason():
-    import etf_analyzer
-
+    import backend.etf_analyzer as etf_analyzer
     prices = synthetic_prices(days=30)
     result = etf_analyzer.score_equity_etf(
         prices, prices.pct_change().dropna(), 1e8, "Balanced", {}, symbol="NEWETF"

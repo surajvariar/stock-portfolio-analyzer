@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from risk_questionnaire import TIER_RISK_LIMITS
-from risk_scoring.composite_risk_score import composite_risk_label
+from backend.risk_questionnaire import TIER_RISK_LIMITS
+from backend.risk_scoring.composite_risk_score import composite_risk_label
 
 
 def _hhi_by_group(holdings: list[dict[str, Any]], group_key: str) -> float | None:
