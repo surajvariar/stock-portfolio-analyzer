@@ -1,0 +1,40 @@
+[project]
+name = "stock-portfolio-analyzer"
+version = "0.1.0"
+description = "Indian equity portfolio analyzer with risk scoring, sentiment, and recommendations"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "psycopg[binary]>=3.2.1",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.9.2",
+    "kiteconnect>=5.0.0",
+    "pandas>=2.2.0",
+    "yfinance>=0.2.54",
+    "requests>=2.32.0",
+    "httpx>=0.28.1",
+    "langchain>=1.0.0",
+    "langchain-ollama>=0.3.0",
+    "langfuse>=3.0.0",
+    "streamlit>=1.64.0",
+    "tavily-python>=0.7.12",
+    "plotly>=5.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "ruff>=0.6.8",
+]
+
+[build-system]
+requires = ["hatchling>=1.18.0"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
