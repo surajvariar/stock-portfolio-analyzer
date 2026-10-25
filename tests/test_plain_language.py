@@ -224,7 +224,7 @@ def test_prompt_for_a_candidate_says_it_is_not_owned():
 def test_prompt_allows_self_explanatory_headlines_without_a_word_count_limit():
     prompt = agent.build_ollama_prompt("ABC", STOCK_METRICS, "Balanced")
 
-    assert "there is no word-count limit" in prompt
+    assert "one clear sentence (under 130 characters)" in prompt
     assert "saying what to do and the main reason" in prompt
     assert "at most 12 words" not in prompt
 

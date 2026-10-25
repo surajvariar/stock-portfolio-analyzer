@@ -56,7 +56,7 @@ def test_build_review_rows_calculates_forward_price_return():
     )
 
     assert rows[0]["forward_price_return_pct"] == 12.5
-    assert rows[0]["review_status"] == "ready"
+    assert rows[0]["review_status"] == "awaiting_price_data"
 
 
 def test_fetch_fii_dii_flows_parses_verified_nse_fields(monkeypatch):

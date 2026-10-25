@@ -18,9 +18,6 @@ build/
 dist/
 *.egg-info/
 
-# Generated snapshot
-ETF_ANALYZER_SNAPSHOT.md
-
 # Frontend
 UI/node_modules/
 UI/dist/

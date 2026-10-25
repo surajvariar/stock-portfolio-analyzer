@@ -6,11 +6,11 @@ from typing import Any
 
 import pandas as pd
 
-from backend.risk_scoring.beta_calculator import to_date_indexed
+from risk_scoring.beta_calculator import to_date_indexed
 
 # Reviews younger than this are noise, not evidence.
 MIN_REVIEW_DAYS = 5
-# A HOLD "worked" if the stock stayed within this many percentage points of Nifty.
+# A HOLD "worked" as long as the stock did not lag Nifty by more than this many percentage points.
 HOLD_TOLERANCE_PCT = 5.0
 
 
@@ -36,7 +36,7 @@ def _outcome(recommendation: str | None, reference_return: float, holding_days: 
     if recommendation == "SELL":
         return "hit" if reference_return < 0 else "miss"
     if recommendation == "HOLD":
-        return "hit" if abs(reference_return) <= HOLD_TOLERANCE_PCT else "miss"
+        return "hit" if reference_return >= -HOLD_TOLERANCE_PCT else "miss"
     return "unknown"
 
 
@@ -78,6 +78,13 @@ def build_review_rows(
             outcome_basis = "excess_vs_nifty" if excess_return is not None else "absolute_return"
             outcome = _outcome(recommendation.get("recommendation"), reference, holding_days)
 
+        if forward_return is None or holding_days is None:
+            review_status = "awaiting_price_data"
+        elif holding_days < MIN_REVIEW_DAYS:
+            review_status = "too_early"
+        else:
+            review_status = "ready"
+
         rows.append(
             {
                 "stock_symbol": recommendation.get("stock_symbol"),
@@ -95,7 +102,7 @@ def build_review_rows(
                 "excess_return_pct": excess_return,
                 "outcome": outcome,
                 "outcome_basis": outcome_basis,
-                "review_status": "ready" if forward_return is not None else "awaiting_price_data",
+                "review_status": review_status,
             }
         )
     return rows

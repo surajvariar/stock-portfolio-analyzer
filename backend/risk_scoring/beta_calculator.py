@@ -81,9 +81,10 @@ def calculate_beta(stock_returns: Any, market_returns: Any) -> float | None:
 def beta_risk_bucket(beta: float | None) -> str:
     if beta is None or not math.isfinite(beta):
         return "Unknown"
-    if beta < 0.8:
+    magnitude = abs(beta)
+    if magnitude < 0.8:
         return "Low"
-    if beta <= 1.2:
+    if magnitude <= 1.2:
         return "Moderate"
     return "High"
 

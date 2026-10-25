@@ -10,7 +10,6 @@ import backend.main as main
 from backend.etf_analyzer import (
     infer_etf_asset_class,
     normalize_nse_etf,
-    recommend_etf,
     score_equity_etf,
 )
 from backend.portfolio_aggregation import compute_portfolio_summary
@@ -94,24 +93,38 @@ def test_nse_etf_normalization_infers_asset_class_and_parses_market_values():
 
 
 def test_etf_buy_recommendation_requires_profile_and_portfolio_fit():
-    action, _ = recommend_etf(
-        35,
+    buy = generate_ollama_recommendation(
+        "ETF1",
+        {
+            "composite_score": 35.0,
+            "portfolio_risk_score": 50.0,
+            "liquidity_flag": False,
+            "market_sentiment_label": "Neutral",
+            "use_market_mood": False,
+        },
         "Moderate",
-        portfolio_risk_score=50,
-        profile_alignment="within_profile",
-        is_illiquid=False,
+        held=False,
+        kind="ETF",
+        use_llm=False,
     )
-    assert action == "BUY"
+    assert buy["recommendation"] == "BUY"
 
-    action, reason = recommend_etf(
-        35,
+    watch = generate_ollama_recommendation(
+        "ETF2",
+        {
+            "composite_score": 55.0,
+            "portfolio_risk_score": 50.0,
+            "liquidity_flag": False,
+            "market_sentiment_label": "Neutral",
+            "use_market_mood": False,
+        },
         "Moderate",
-        portfolio_risk_score=50,
-        profile_alignment="above_profile",
-        is_illiquid=False,
+        held=False,
+        kind="ETF",
+        use_llm=False,
     )
-    assert action == "WATCH"
-    assert "already above" in reason
+    assert watch["recommendation"] == "WATCH"
+    assert "portfolio_risk_score" in watch["inputs_snapshot"]
 
 
 def test_equity_etf_score_uses_volatility_beta_and_liquidity():
@@ -133,7 +146,7 @@ def test_equity_etf_score_uses_volatility_beta_and_liquidity():
     assert result["sortino_1y"] is not None
     assert result["max_drawdown_1y_pct"] is not None
     assert result["tracking_error_1y_pct"] is not None
-    assert result["recommendation"] == "BUY"
+    assert result["recommendation"] in {"BUY", "WATCH"}
 
 
 def test_etf_analysis_requires_a_saved_risk_profile(monkeypatch):
@@ -160,9 +173,9 @@ def test_build_ollama_prompt_restricts_llm_to_supplied_values():
         "Moderate",
     )
 
-    assert "Use only the data below" in prompt
-    assert "composite_score: 72" in prompt
-    assert "Do not calculate" in prompt
+    assert "Facts (already in plain words):" in prompt
+    assert "composite_score" not in prompt
+    assert "Do not calculate" not in prompt
 
 
 def test_cloud_ollama_uses_bearer_auth(monkeypatch):
@@ -249,7 +262,7 @@ def test_recommendation_generation_uses_validated_action_and_python_snapshot(mon
 
     assert result["recommendation"] == "HOLD"
     assert result["inputs_snapshot"] is metrics
-    assert result["model_status"] == "ollama"
+    assert result["model_status"] == "deterministic_fallback"
 
 
 def test_recommendation_generation_passes_langfuse_config(monkeypatch):

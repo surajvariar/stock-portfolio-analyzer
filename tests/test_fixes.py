@@ -150,7 +150,7 @@ def test_reconcile_only_lets_model_be_more_conservative():
     sell = evaluate_policy(90, "Balanced")
     hold = evaluate_policy(50, "Balanced")
     inc = evaluate_policy(25, "Balanced")
-    assert reconcile("HOLD", sell) == ("HOLD", False)
+    assert reconcile("HOLD", sell) == ("SELL", True)
     assert reconcile("INCREASE", sell) == ("SELL", True)
     assert reconcile("SELL", hold) == ("HOLD", True)
     assert reconcile("BUY", inc) == ("INCREASE", False)  # BUY read as INCREASE

@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from backend.db import (
+from db import (
     ensure_schema,
     execute,
     execute_many,
@@ -31,52 +31,44 @@ from backend.db import (
     save_kite_access_token,
     start_agent_run,
 )
-from backend.etf_analyzer import (
+from etf_analyzer import (
     ETF_HISTORY_DAYS,
     PLAIN_NOT_ENOUGH_HISTORY,
     analyze_equity_etfs,
     fetch_nse_etf_universe,
     is_small_cap_etf,
 )
-from backend.frontend_redirect import (
+from frontend_redirect import (
     RETURN_COOKIE,
     RETURN_COOKIE_MAX_AGE,
     build_redirect_url,
     safe_return_url,
 )
-from backend.kite_client import (
+from kite_client import (
     fetch_equity_holdings,
     generate_access_token,
     get_authenticated_kite,
     get_login_url,
 )
-from backend.market_hours import drop_incomplete_series
-from backend.plain_language import build_explanation, compose
-from backend.portfolio_aggregation import compute_portfolio_summary, group_weights_pct
-from backend.price_history_sync import sync_all_prices
-from backend.recommendation_agent import generate_ollama_recommendation
-from backend.review_harness import build_review_rows
-from backend.risk_questionnaire import calculate_risk_profile
-from backend.risk_scoring.beta_calculator import estimate_beta
-from backend.risk_scoring.composite_risk_score import (
-    composite_risk_label,
-    composite_risk_score,
-)
-from backend.risk_scoring.liquidity_flagger import (
-    liquidity_flag as compute_liquidity_flag,
-)
-from backend.risk_scoring.liquidity_flagger import median_daily_turnover
-from backend.risk_scoring.market_cap_classifier import classify_market_cap_rank
-from backend.risk_scoring.volatility_calculator import (
+from market_hours import drop_incomplete_series
+from plain_language import build_explanation, compose
+from portfolio_aggregation import compute_portfolio_summary, group_weights_pct
+from price_history_sync import sync_all_prices
+from recommendation_agent import generate_ollama_recommendation
+from review_harness import build_review_rows
+from risk_questionnaire import calculate_risk_profile
+from risk_scoring.beta_calculator import estimate_beta
+from risk_scoring.composite_risk_score import composite_risk_label, composite_risk_score
+from risk_scoring.liquidity_flagger import liquidity_flag as compute_liquidity_flag
+from risk_scoring.liquidity_flagger import median_daily_turnover
+from risk_scoring.market_cap_classifier import classify_market_cap_rank
+from risk_scoring.volatility_calculator import (
     MIN_RETURN_OBSERVATIONS,
     annualized_volatility,
 )
-from backend.sentiment.market_data import fetch_market_inputs
-from backend.sentiment.news_sentiment import (
-    fetch_news_headlines,
-    summarize_news_with_ollama,
-)
-from backend.sentiment.quant_sentiment import (
+from sentiment.market_data import fetch_market_inputs
+from sentiment.news_sentiment import fetch_news_headlines, summarize_news_with_ollama
+from sentiment.quant_sentiment import (
     composite_sentiment_label,
     compute_market_sentiment,
 )
@@ -1149,18 +1141,20 @@ def _prepare_etf_analysis() -> dict[str, Any]:
             for item in records
         ],
     )
+
+    portfolio_summary = get_portfolio_summary()
+    market_sentiment = fetch_recent_sentiment("MARKET", "INDIA", MARKET_SENTIMENT_MAX_AGE_DAYS)
+
     run = fetch_one("INSERT INTO agent_runs (run_type, status) VALUES ('ETF_ANALYSIS', 'RUNNING') RETURNING id")
     if not run:
         raise HTTPException(status_code=500, detail="Could not create ETF analysis run.")
-
-    market_sentiment = fetch_recent_sentiment("MARKET", "INDIA", MARKET_SENTIMENT_MAX_AGE_DAYS)
 
     return {
         "run_id": run["id"],
         "records": records,
         "market_prices": market_prices,
         "risk_tier": profile["risk_tier"],
-        "portfolio_summary": get_portfolio_summary(),
+        "portfolio_summary": portfolio_summary,
         "source_timestamp": source_timestamp,
         "market_sentiment_label": market_sentiment["label"] if market_sentiment else None,
     }

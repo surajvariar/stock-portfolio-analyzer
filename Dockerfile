@@ -3,6 +3,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
+    PYTHONPATH="/app/backend" \
     PATH="/app/.venv/bin:$PATH"
 
 RUN pip install --no-cache-dir uv

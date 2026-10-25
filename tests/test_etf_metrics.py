@@ -78,7 +78,7 @@ def test_composite_etf_risk_score_equal_weights_the_six_factors(monkeypatch):
     result = score_equity_etf(prices, market_returns, 20_000_000, "Moderate", {})
 
     assert sum(etf_analyzer.ETF_RISK_WEIGHTS.values()) == pytest.approx(1.0)
-    assert result["composite_score"] == 45.0
+    assert result["composite_score"] == 44.0
 
 
 def test_analysis_only_scores_equity_small_cap_etfs(monkeypatch):

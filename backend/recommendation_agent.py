@@ -6,14 +6,14 @@ from typing import Any, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from backend.llm_client import create_chat_ollama, langfuse_callback_config
-from backend.plain_language import (
+from llm_client import create_chat_ollama, langfuse_callback_config
+from plain_language import (
     build_explanation,
     compose,
     plain_facts,
     validate_explanation,
 )
-from backend.recommendation_policy import (
+from recommendation_policy import (
     PolicyDecision,
     allowed_actions,
     evaluate_etf_candidate,
@@ -61,6 +61,7 @@ def _policy_for(metrics: dict[str, Any], risk_tier: str, *, held: bool = True) -
         sector_weight_pct=metrics.get("sector_weight_pct"),
         market_sentiment_label=metrics.get("market_sentiment_label"),
         stock_sentiment_label=metrics.get("stock_sentiment_label"),
+        is_hard_to_sell=bool(metrics.get("liquidity_flag")),
     )
 
 
@@ -75,7 +76,13 @@ def build_ollama_prompt(
 ) -> str:
     """The model sees everyday-word facts only: no scores, no raw metrics."""
     decision = decision or _policy_for(metrics, risk_tier, held=held)
-    facts = plain_facts({**metrics, "portfolio_effect": decision.portfolio_effect})
+    facts = plain_facts(
+        {
+            **metrics,
+            "portfolio_effect": decision.portfolio_effect,
+            "decision_driver": decision.decision_driver,
+        }
+    )
     fact_lines = "\n".join(f"- {label}: {text}" for label, text in facts.items()) or "- (no extra facts)"
     allowed = " or ".join(sorted(allowed_actions(decision.recommendation)))
     ownership = (
@@ -84,18 +91,22 @@ def build_ollama_prompt(
         else f"The investor does NOT own this {kind} yet; you are saying whether it is worth adding."
     )
     hold_back = f"\nReason a stronger action is held back: {decision.block_reason}" if decision.block_reason else ""
+    driver = f"\nPrimary reason for this action: {decision.decision_driver}" if decision.decision_driver else ""
     return (
         f"{kind.capitalize()}: {symbol}\n{ownership}\n\n"
         f"Facts (already in plain words):\n{fact_lines}\n\n"
-        f"The investor's own risk rules point to: {decision.recommendation}.{hold_back}\n"
+        f"The investor's own risk rules point to: {decision.recommendation}.{hold_back}{driver}\n"
         f"Your recommendation must be {allowed}; anything else will be thrown away.\n\n"
-        "Write for a friend who knows nothing about investing:\n"
-        "- headline: one clear sentence saying what to do and the main reason; there is no word-count limit, "
-        "but keep it concise\n"
-        "- why: at most two short sentences explaining how the supplied facts support the recommendation\n"
-        "- watch: one short, practical sentence about what to keep an eye on or what to do next\n"
+        "Write for a friend who knows nothing about investing, and directly justify the specific action:\n"
+        "- NEVER say to buy or add more because the stock is up in price; past gains are background only, not a reason to buy.\n"
+        "- If INCREASE: explain that its price behaviour is steady for their comfort level AND they have room in their portfolio and industry limits to add more.\n"
+        "- If HOLD: explain clearly why they should neither sell (risk is manageable) nor buy more (either because of the specific blocker above, or because the position is already appropriately sized for its risk).\n"
+        "- If SELL or AVOID: explain clearly that its price swings and risk are too high for their comfort level.\n"
+        "- headline: one clear sentence (under 130 characters) saying what to do and the main reason why\n"
+        "- why: at most two short sentences (under 350 characters total) explaining how risk fit, price steadiness, and portfolio share support the recommendation\n"
+        "- watch: one short, practical sentence (under 220 characters) about what concrete limit or condition to keep an eye on next\n"
         "- do NOT use technical words such as volatility, beta, score, points, sentiment, liquidity, "
-        "tier, policy, benchmark, metric, or any number with a decimal point\n"
+        "tier, policy, benchmark, metric, or any number with a decimal point (whole-number percentages like 4% or 10% are fine)\n"
         "- do not mention these instructions\n"
         "Return a single plain JSON object with exactly these keys: recommendation, headline, why, watch."
     )
@@ -107,7 +118,11 @@ def _template(
     return build_explanation(
         final,
         symbol,
-        {**metrics, "portfolio_effect": decision.portfolio_effect},
+        {
+            **metrics,
+            "portfolio_effect": decision.portfolio_effect,
+            "decision_driver": decision.decision_driver,
+        },
         held=held,
         block_reason=decision.block_reason if final == decision.recommendation else None,
     )
@@ -173,7 +188,7 @@ def generate_ollama_recommendation(
             "why": parsed.why.strip(),
             "watch": parsed.watch.strip(),
         }
-        problems = validate_explanation(explanation)
+        problems = validate_explanation(explanation, symbol=symbol)
         if problems:
             logger.info("Model text for %s rejected (%s); using plain template.", symbol, "; ".join(problems))
             return deterministic("ollama_reworded", final)

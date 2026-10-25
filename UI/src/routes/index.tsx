@@ -43,6 +43,9 @@ type Holding = {
 type PortfolioSummary = {
   total_value?: number | string | null;
   weighted_average_risk_score?: number | null;
+  portfolio_hhi?: number | null;
+  sector_hhi?: number | null;
+  market_cap_hhi?: number | null;
   risk_label?: string | null;
   profile_alignment?: string | null;
   coverage_pct?: number | null;
@@ -75,8 +78,12 @@ type Recommendation = {
   recommendation?: string;
   reasoning?: string;
   explanation?: Explanation | null;
-  inputs_snapshot?: { explanation?: Explanation | null } | null;
-  created_at?: string;
+  inputs_snapshot?: {
+    explanation?: Explanation | null;
+    model_status?: string | null;
+  } | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   model_status?: string | null;
   llm_recommendation?: string | null;
   policy_recommendation?: string | null;
@@ -113,6 +120,10 @@ type ETFResult = {
   recommendation?: string | null;
   reasoning?: string | null;
   explanation?: Explanation | null;
+  inputs_snapshot?: {
+    explanation?: Explanation | null;
+    model_status?: string | null;
+  } | null;
   composite_score?: number | string | null;
   risk_label?: string | null;
   volatility_1y?: number | string | null;
@@ -122,6 +133,9 @@ type ETFResult = {
   tracking_error_1y_pct?: number | string | null;
   liquidity_flag?: boolean | null;
   history_days?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  model_status?: string | null;
 };
 type ETFAnalysisRun = {
   status: string;
@@ -310,7 +324,7 @@ function getRecommendationColor(recommendation?: string): string {
   if (upper.includes("BUY") || upper.includes("INCREASE")) {
     return "bg-market-gain/15 text-market-gain ring-market-gain/30";
   }
-  if (upper.includes("SELL")) {
+  if (upper.includes("SELL") || upper.includes("AVOID")) {
     return "bg-market-loss/15 text-market-loss ring-market-loss/30";
   }
 
@@ -320,7 +334,7 @@ function getRecommendationColor(recommendation?: string): string {
 // Say when the action is not purely the AI's call. The backend keeps the model
 // inside the investor's risk rules and falls back to the rules if it is down.
 // The plain-language explanation saved with each recommendation (older rows only have `reasoning`).
-function explanationOf(rec: Recommendation | null): Explanation | null {
+function explanationOf(rec: { explanation?: Explanation | null; inputs_snapshot?: { explanation?: Explanation | null } | null } | null): Explanation | null {
   const found = rec?.explanation ?? rec?.inputs_snapshot?.explanation ?? null;
   return found && (found.headline || found.why || found.watch) ? found : null;
 }
@@ -332,6 +346,7 @@ const PLAIN_ACTION: Record<string, string> = {
   BUY: "Good to add",
   WATCH: "Wait for now",
   AVOID: "Skip for now",
+  "NOT RATED": "Needs more price history",
 };
 
 function plainAction(recommendation?: string | null): string | null {
@@ -340,15 +355,25 @@ function plainAction(recommendation?: string | null): string | null {
 
 function engineNote(rec: Recommendation | null): { label: string; detail: string } | null {
   if (!rec) return null;
-  if (rec.model_status === "ollama_overridden") {
+  const status = rec.model_status ?? rec.inputs_snapshot?.model_status ?? null;
+  if (status === "ollama_overridden") {
     const suggested = rec.llm_recommendation ? `suggested ${rec.llm_recommendation}` : "suggested a different action";
     return {
       label: "Adjusted",
       detail: `The AI ${suggested}, but your own risk limits point to ${rec.recommendation?.toUpperCase() ?? "a different action"}, so that was used.`,
     };
   }
-  if (rec.model_status === "deterministic_fallback") {
-    return { label: "Standard wording", detail: "The AI model was unavailable, so this uses standard wording based on your risk limits." };
+  if (status === "ollama_reworded") {
+    return {
+      label: "Plain-language template",
+      detail: "The AI agreed with this action, and standard plain-language wording was used for clarity.",
+    };
+  }
+  if (status === "deterministic_fallback") {
+    return {
+      label: "Rule-based wording",
+      detail: "This explanation uses standard plain-language wording directly from your risk and sizing rules.",
+    };
   }
   return null;
 }
@@ -636,8 +661,11 @@ function Dashboard() {
   const completedQuestions = Object.values(answers).filter((answer) => answer > 0).length;
   const hasProfile = Boolean(profile);
 
-  // Portfolio-level risk line
+  // Portfolio-level risk and concentration
   const portfolioRisk = asNumber(summary?.weighted_average_risk_score);
+  const portfolioHHI = asNumber(summary?.portfolio_hhi) ?? asNumber(etfResults[0]?.portfolio_hhi);
+  const sectorHHI = asNumber(summary?.sector_hhi) ?? asNumber(etfResults[0]?.sector_hhi);
+  const marketCapHHI = asNumber(summary?.market_cap_hhi) ?? asNumber(etfResults[0]?.market_cap_hhi);
   const scoredCount = asNumber(summary?.scored_holdings);
   const holdingCount = asNumber(summary?.total_holdings);
   const coveragePct = asNumber(summary?.coverage_pct);
@@ -1249,186 +1277,293 @@ function Dashboard() {
           </TabsContent>
 
           <TabsContent value="etfs" className="mt-4">
+            {/* Portfolio context bar (moved out of individual ETF rows) */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card/75 px-4 py-2.5 text-xs ring-1 ring-border backdrop-blur-xl">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <ShieldCheck className="size-4 shrink-0 text-market-teal" aria-hidden="true" />
+                <span className="font-medium text-foreground">
+                  Target profile: {profile?.risk_tier || "Unprofiled"}
+                </span>
+                {portfolioRisk !== null && (
+                  <span className="text-market-slate">
+                    · Current portfolio risk {Math.round(portfolioRisk)} / 100
+                  </span>
+                )}
+              </div>
+              {(portfolioHHI !== null || sectorHHI !== null || marketCapHHI !== null) && (
+                <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] text-market-slate">
+                  {portfolioHHI !== null && (
+                    <span title="Current portfolio Herfindahl concentration index (lower means more diversified)">
+                      Portfolio HHI {numberText(portfolioHHI)}
+                    </span>
+                  )}
+                  {sectorHHI !== null && (
+                    <span title="Current sector concentration index">
+                      Sector HHI {numberText(sectorHHI)}
+                    </span>
+                  )}
+                  {marketCapHHI !== null && (
+                    <span title="Current market-cap tier concentration index">
+                      Cap HHI {numberText(marketCapHHI)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* ETF risk-fit scan */}
             <section className="rounded-xl bg-card/75 p-4 ring-1 ring-border backdrop-blur-xl sm:p-5" aria-labelledby="etf-analyzer-title">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <BarChart3 className="size-4 text-market-teal" aria-hidden="true" />
-                <h2 id="etf-analyzer-title" className="font-display text-sm font-semibold">ETF analyzer</h2>
-                <span className="rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[9px] text-market-slate ring-1 ring-border">NSE equity</span>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="size-4 text-market-teal" aria-hidden="true" />
+                    <h2 id="etf-analyzer-title" className="font-display text-sm font-semibold">Small-cap ETF analyzer</h2>
+                    <span className="rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[9px] text-market-slate ring-1 ring-border">NSE equity</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-market-slate">
+                    Click any ETF symbol to read its plain-language risk &amp; portfolio fit explanation.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shadow-none"
+                  onClick={() => void runETFAnalysis()}
+                  disabled={etfAnalyzing || !hasProfile}
+                  title={!hasProfile ? "Complete the investor profile first" : "Refresh NSE listings and analyze available ETF histories"}
+                >
+                  {etfAnalyzing ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Activity className="mr-1.5 size-3.5" />}
+                  {etfAnalyzing ? "Analyzing…" : "Analyze ETFs"}
+                </Button>
               </div>
-              <p className="mt-1 text-[11px] text-market-slate">
-                Risk-fit ranking only. Constituent overlap and purchase-size effects are not modeled.
+
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-market-slate" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={etfSearch}
+                    onChange={(event) => {
+                      setETFSearch(event.target.value);
+                      setETFPage(0);
+                    }}
+                    placeholder="Filter symbol or underlying"
+                    aria-label="Filter ETF symbol or underlying"
+                    className="h-8 w-full rounded-md border border-border bg-background/50 pl-8 pr-3 text-xs outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <select
+                    value={etfActionFilter}
+                    onChange={(event) => {
+                      setETFActionFilter(event.target.value);
+                      setETFPage(0);
+                    }}
+                    aria-label="Filter ETFs by action"
+                    className="h-8 rounded-md border border-border bg-background/50 px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="ALL">All actions</option>
+                    {ETF_ACTION_FILTER_OPTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
+                  </select>
+                  <span className="font-mono text-[10px] text-market-slate">
+                    {scoredETFCount} scored · {filteredETFResults.length} matches
+                  </span>
+                </div>
+              </div>
+
+              {(etfNotice || etfError) && (
+                <p className={`mb-3 text-xs ${etfError ? "text-market-loss" : "text-market-slate"}`} role={etfError ? "alert" : "status"}>
+                  {etfError || etfNotice}
+                </p>
+              )}
+
+              <div className="w-full overflow-x-auto rounded-md border border-border/70">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="bg-card text-[10px] uppercase text-market-slate">
+                    <tr className="border-b border-border/80 font-mono">
+                      <th className="px-3 py-2.5 text-left font-medium">Small-cap ETF</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Price / NAV / iNAV</th>
+                      <th className="px-3 py-2.5 text-right font-medium" title="Daily liquidity and traded value">Liquidity</th>
+                      <th className="px-3 py-2.5 text-right font-medium" title="Overall risk out of 100. Lower is calmer.">Risk</th>
+                      <th className="px-3 py-2.5 text-right font-medium" title="Annualized price swings and maximum 1Y peak-to-trough decline">Swings / Drawdown</th>
+                      <th className="px-3 py-2.5 text-right font-medium" title="Market sensitivity (Beta), Sortino ratio, and Nifty 50 tracking error (reference)">Beta / Sortino</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {paginatedETFResults.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-10 text-center text-market-slate">
+                          {etfResults.length ? "No small-cap ETFs match these filters." : "Run an ETF analysis to load current NSE listings."}
+                        </td>
+                      </tr>
+                    ) : paginatedETFResults.map((item) => {
+                      const isUnscored = asNumber(item.composite_score) == null;
+                      const itemExplanation = explanationOf(item);
+                      const actionBadge = isUnscored ? "NOT RATED" : (item.recommendation || "REVIEW").toUpperCase();
+                      return (
+                        <tr key={item.symbol} className="hover:bg-foreground/[0.02]">
+                          <td className="max-w-[280px] px-3 py-2.5">
+                            <button
+                              type="button"
+                              className="block w-full text-left group"
+                              onClick={() =>
+                                setSelectedRec({
+                                  symbol: item.symbol,
+                                  recommendation: actionBadge,
+                                  reasoning: item.reasoning ?? undefined,
+                                  explanation: itemExplanation,
+                                  inputs_snapshot: item.inputs_snapshot,
+                                  created_at: item.created_at || item.updated_at,
+                                  model_status: item.model_status ?? item.inputs_snapshot?.model_status,
+                                })
+                              }
+                              aria-label={`See why for ${item.symbol}`}
+                            >
+                              <div className="truncate font-semibold text-foreground underline-offset-2 group-hover:underline" title={item.symbol}>
+                                {item.symbol}
+                              </div>
+                              <div className="truncate text-[10px] text-market-slate" title={item.underlying || undefined}>
+                                {item.underlying || "Underlying not supplied"}
+                              </div>
+                              {itemExplanation?.headline && (
+                                <div className="mt-0.5 truncate text-[10px] text-foreground/75" title={itemExplanation.headline}>
+                                  {itemExplanation.headline}
+                                </div>
+                              )}
+                            </button>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-[10px]">
+                            <div className="font-medium text-foreground">
+                              {item.last_price == null ? "—" : money(asNumber(item.last_price) ?? 0)}
+                            </div>
+                            <div className="text-market-slate">
+                              NAV {item.nav == null ? "—" : money(asNumber(item.nav) ?? 0)}
+                            </div>
+                            {item.inav != null && (
+                              <div className="text-market-slate">
+                                iNAV {money(asNumber(item.inav) ?? 0)}
+                                {asNumber(item.inav_premium_discount_pct) == null
+                                  ? ""
+                                  : ` (${numberText(asNumber(item.inav_premium_discount_pct))}%)`}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-[10px]">
+                            {item.liquidity_flag == null ? (
+                              <span className="text-market-slate">—</span>
+                            ) : item.liquidity_flag ? (
+                              <span
+                                className="inline-flex rounded bg-market-loss/10 px-1.5 py-0.5 text-[9px] text-market-loss ring-1 ring-market-loss/20"
+                                title="Median daily turnover is below Rs 1 crore; can be harder to sell quickly"
+                              >
+                                Low volume
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex rounded bg-market-gain/10 px-1.5 py-0.5 text-[9px] text-market-gain ring-1 ring-market-gain/20"
+                                title="Trades easily above the daily volume threshold"
+                              >
+                                Liquid
+                              </span>
+                            )}
+                            {asNumber(item.traded_value) != null && (
+                              <div className="mt-0.5 text-market-slate" title="Latest NSE traded value">
+                                Vol {money(asNumber(item.traded_value))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono">
+                            {isUnscored ? (
+                              <span className="text-market-slate">—</span>
+                            ) : (
+                              <div>
+                                <span className="font-medium text-foreground">
+                                  {numberText(asNumber(item.composite_score))}
+                                </span>
+                                <span className="text-[10px] text-market-slate"> / 100</span>
+                                {item.risk_label && (
+                                  <div className="text-[9px] text-market-slate">{item.risk_label}</div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-[10px]">
+                            <div>
+                              {asNumber(item.volatility_1y) == null ? "—" : `${numberText(asNumber(item.volatility_1y))}%`}
+                            </div>
+                            <div className="text-market-slate">
+                              {asNumber(item.max_drawdown_1y_pct) == null
+                                ? "Max DD —"
+                                : `Max DD -${numberText(asNumber(item.max_drawdown_1y_pct))}%`}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-[10px]">
+                            <div title="Beta against Nifty 50">
+                              Beta {asNumber(item.beta_1y) == null ? "—" : numberText(asNumber(item.beta_1y))}
+                            </div>
+                            <div className="text-market-slate" title="Sortino ratio (downside risk-adjusted return)">
+                              Sortino {asNumber(item.sortino_1y) == null ? "—" : numberText(asNumber(item.sortino_1y))}
+                            </div>
+                            {asNumber(item.tracking_error_1y_pct) != null && (
+                              <div className="text-market-slate" title="Reference tracking error vs Nifty 50 (not penalized in small-cap risk score)">
+                                TE {numberText(asNumber(item.tracking_error_1y_pct))}%
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                            <span
+                              title={isUnscored ? item.reasoning || "Not enough data to score this ETF." : undefined}
+                              className={`inline-flex rounded px-2 py-0.5 font-mono text-[10px] font-medium ring-1 ${getRecommendationColor(isUnscored ? undefined : actionBadge)}`}
+                            >
+                              {actionBadge}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {filteredETFResults.length > 0 && (
+                <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={visibleETFPage === 0}
+                    onClick={() => setETFPage((page) => Math.max(page - 1, 0))}
+                    aria-label="Previous ETF results page"
+                  >
+                    <ChevronLeft className="mr-1 size-3" /> Prev
+                  </Button>
+                  <span className="font-mono text-[10px] text-market-slate">
+                    {visibleETFPage + 1} / {totalETFPages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={visibleETFPage >= totalETFPages - 1}
+                    onClick={() => setETFPage((page) => Math.min(page + 1, totalETFPages - 1))}
+                    aria-label="Next ETF results page"
+                  >
+                    Next <ChevronRight className="ml-1 size-3" />
+                  </Button>
+                </div>
+              )}
+              <details className="mt-3 border-t border-border/60 pt-2 text-[11px] text-market-slate">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground">
+                  <CircleHelp className="size-3.5 text-market-teal" aria-hidden="true" /> How actions are determined
+                </summary>
+                <div className="mt-2 space-y-1.5 leading-relaxed">
+                  <p><strong className="text-foreground">How we decide.</strong> For small-cap equity ETFs, the risk score equally combines five metrics (20% each): price swings (volatility), market sensitivity (beta), trading liquidity, Sortino ratio, and maximum drawdown. Tracking error against the Nifty 50 and portfolio concentration (HHI) are shown as reference context without penalizing small-cap funds.</p>
+                  <p><strong className="text-foreground">BUY</strong> means the ETF fits comfortably within your risk limit, trades easily, and keeps your overall portfolio within your risk comfort zone (or lowers your portfolio risk if you are currently above your limit). <strong className="text-foreground">WATCH</strong> means wait: its risk is slightly above your limit, daily trading volume is thin, or market mood is gloomy. <strong className="text-foreground">AVOID</strong> means its risk is far above what you said you are comfortable with.</p>
+                </div>
+              </details>
+              <p className="mt-2 text-[10px] text-market-slate">
+                Only equity ETFs with “Smallcap” or “Small Cap” in the underlying name are rated in this view.
               </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 shadow-none"
-              onClick={() => void runETFAnalysis()}
-              disabled={etfAnalyzing || !hasProfile}
-              title={!hasProfile ? "Complete the investor profile first" : "Refresh NSE listings and analyze available ETF histories"}
-            >
-              {etfAnalyzing ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Activity className="mr-1.5 size-3.5" />}
-              {etfAnalyzing ? "Analyzing" : "Analyze ETFs"}
-            </Button>
-          </div>
-
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-market-slate" aria-hidden="true" />
-              <input
-                type="search"
-                value={etfSearch}
-                onChange={(event) => {
-                  setETFSearch(event.target.value);
-                  setETFPage(0);
-                }}
-                placeholder="Filter symbol or underlying"
-                aria-label="Filter ETF symbol or underlying"
-                className="h-8 w-full rounded-md border border-border bg-background/50 pl-8 pr-3 text-xs outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <select
-              value={etfActionFilter}
-              onChange={(event) => {
-                setETFActionFilter(event.target.value);
-                setETFPage(0);
-              }}
-              aria-label="Filter ETFs by action"
-              className="h-8 rounded-md border border-border bg-background/50 px-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="ALL">All actions</option>
-              {ETF_ACTION_FILTER_OPTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
-            </select>
-            <span className="font-mono text-[10px] text-market-slate">
-              {scoredETFCount} scored · {filteredETFResults.length} matches
-            </span>
-          </div>
-
-          {(etfNotice || etfError) && (
-            <p className={`mb-3 text-xs ${etfError ? "text-market-loss" : "text-market-slate"}`} role={etfError ? "alert" : "status"}>
-              {etfError || etfNotice}
-            </p>
-          )}
-
-          <div className="w-full rounded-md border border-border/70">
-            <table className="w-full table-fixed border-collapse text-xs">
-              <thead className="bg-card text-[10px] uppercase text-market-slate">
-                <tr className="border-b border-border/80 font-mono">
-                  <th className="w-[32%] px-1.5 py-2 text-left font-medium sm:px-3">Small-cap ETF / metrics</th>
-                  <th className="w-[21%] px-1.5 py-2 text-right font-medium sm:px-3">Price / NAV / iNAV</th>
-                  <th className="w-[14%] px-1.5 py-2 text-right font-medium sm:px-3" title="Overall risk out of 100. Lower is calmer.">Risk</th>
-                  <th className="w-[13%] px-1.5 py-2 text-right font-medium sm:px-3" title="Annualized price swings and maximum peak-to-trough decline">Volatility / drawdown</th>
-                  <th className="w-[9%] px-1.5 py-2 text-right font-medium sm:px-3" title="How closely it moves with the overall market. About 1 means in step.">Market link</th>
-                  <th className="w-[11%] px-1.5 py-2 text-right font-medium sm:px-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {paginatedETFResults.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-10 text-center text-market-slate">
-                      {etfResults.length ? "                      No small-cap ETFs match these filters." : "Run an ETF analysis to load current NSE listings."}
-                    </td>
-                  </tr>
-                ) : paginatedETFResults.map((item) => (
-                  <tr key={item.symbol} className="hover:bg-foreground/2">
-                    <td className="max-w-70 px-1.5 py-2.5 sm:px-3">
-                      <button
-                        type="button"
-                        className="block w-full text-left"
-                        onClick={() => setSelectedRec({ ...item, symbol: item.symbol, recommendation: asNumber(item.composite_score) == null ? undefined : item.recommendation ?? undefined, reasoning: item.reasoning ?? undefined })}
-                        aria-label={`See why for ${item.symbol}`}
-                      >
-                        <div className="truncate font-semibold" title={item.symbol}>{item.symbol}</div>
-                        <div className="truncate text-[10px] text-market-slate" title={item.underlying || undefined}>{item.underlying || "Underlying not supplied"}</div>
-                        <div className="truncate text-[10px] text-foreground/80" title="Sortino, maximum drawdown, and tracking error">
-                          Sortino {asNumber(item.sortino_1y) == null ? "—" : numberText(asNumber(item.sortino_1y))}
-                          {" · Drawdown "}{asNumber(item.max_drawdown_1y_pct) == null ? "—" : `${numberText(asNumber(item.max_drawdown_1y_pct))}%`}
-                          {" · Tracking error "}{asNumber(item.tracking_error_1y_pct) == null ? "—" : `${numberText(asNumber(item.tracking_error_1y_pct))}%`}
-                        </div>
-                      </button>
-                    </td>
-                    <td className="break-all px-1.5 py-2.5 text-right font-mono text-[9px] sm:px-3 sm:text-[10px]">
-                      {item.last_price == null ? "—" : money(asNumber(item.last_price) ?? 0)}
-                      <div className="text-market-slate">NAV {item.nav == null ? "—" : money(asNumber(item.nav) ?? 0)}</div>
-                      <div className="text-market-slate">iNAV {item.inav == null ? "—" : money(asNumber(item.inav) ?? 0)}{asNumber(item.inav_premium_discount_pct) == null ? "" : ` (${numberText(asNumber(item.inav_premium_discount_pct))}%)`}</div>
-                      <div className="text-market-slate">Turnover ratio {asNumber(item.portfolio_turnover_ratio) == null ? "—" : numberText(asNumber(item.portfolio_turnover_ratio))}</div>
-                      <div className="text-market-slate">Yield − repo {asNumber(item.yield_repo_gap_pct) == null ? "—" : `${numberText(asNumber(item.yield_repo_gap_pct))}%`}</div>
-                      <div className="text-market-slate">Yield / repo {asNumber(item.yield_pct) == null ? "—" : `${numberText(asNumber(item.yield_pct))}%`} / {asNumber(item.repo_rate_pct) == null ? "—" : `${numberText(asNumber(item.repo_rate_pct))}%`}</div>
-                    </td>
-                    <td className="break-all px-1.5 py-2.5 text-right sm:px-3">
-                      {asNumber(item.composite_score) == null ? "—" : (
-                        <span className="font-mono" title={item.risk_label || undefined}>
-                          {numberText(asNumber(item.composite_score))} <span className="text-market-slate">/ 100</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="break-all px-1.5 py-2.5 text-right font-mono text-[9px] sm:px-3 sm:text-[10px]">
-                      {asNumber(item.volatility_1y) == null ? "—" : `${numberText(asNumber(item.volatility_1y))}%`}
-                      <div className="text-market-slate">{asNumber(item.max_drawdown_1y_pct) == null ? "Max —" : `Max ${numberText(asNumber(item.max_drawdown_1y_pct))}%`}</div>
-                    </td>
-                    <td className="break-all px-1.5 py-2.5 text-right font-mono text-[9px] sm:px-3 sm:text-[10px]">
-                      {asNumber(item.beta_1y) == null ? "—" : numberText(asNumber(item.beta_1y))}
-                      <div className="text-market-slate" title="Sortino ratio">{asNumber(item.sortino_1y) == null ? "Sortino —" : `Sortino ${numberText(asNumber(item.sortino_1y))}`}</div>
-                      <div className="text-market-slate" title="Annualized tracking error versus Nifty 50">{asNumber(item.tracking_error_1y_pct) == null ? "TE —" : `TE ${numberText(asNumber(item.tracking_error_1y_pct))}%`}</div>
-                      <div className="text-market-slate" title="Current portfolio Herfindahl concentration index">{asNumber(item.portfolio_hhi) == null ? "Portfolio HHI —" : `Portfolio HHI ${numberText(asNumber(item.portfolio_hhi))}`}</div>
-                      <div className="text-market-slate" title="Current sector concentration index">{asNumber(item.sector_hhi) == null ? "Sector HHI —" : `Sector HHI ${numberText(asNumber(item.sector_hhi))}`}</div>
-                    </td>
-                    <td className="px-1.5 py-2.5 text-right sm:px-3">
-                      <span
-                        title={asNumber(item.composite_score) == null ? item.reasoning || "Not enough data to score this ETF." : undefined}
-                        className={`inline-flex rounded px-1.5 py-0.5 font-mono text-[9px] ring-1 ${getRecommendationColor(asNumber(item.composite_score) == null ? undefined : item.recommendation || undefined)}`}
-                      >
-                        {asNumber(item.composite_score) == null ? "NOT RATED" : item.recommendation || "REVIEW"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {filteredETFResults.length > 0 && (
-            <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={visibleETFPage === 0}
-                onClick={() => setETFPage((page) => Math.max(page - 1, 0))}
-                aria-label="Previous ETF results page"
-              >
-                <ChevronLeft className="mr-1 size-3" /> Prev
-              </Button>
-              <span className="font-mono text-[10px] text-market-slate">
-                {visibleETFPage + 1} / {totalETFPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={visibleETFPage >= totalETFPages - 1}
-                onClick={() => setETFPage((page) => Math.min(page + 1, totalETFPages - 1))}
-                aria-label="Next ETF results page"
-              >
-                Next <ChevronRight className="ml-1 size-3" />
-              </Button>
-            </div>
-          )}
-          <details className="mt-3 border-t border-border/60 pt-2 text-[11px] text-market-slate">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground">
-              <CircleHelp className="size-3.5 text-market-teal" aria-hidden="true" /> How actions are determined
-            </summary>
-            <div className="mt-2 space-y-1.5 leading-relaxed">
-              <p><strong className="text-foreground">How we decide.</strong> For this small-cap test, the risk number equally combines price swings, market sensitivity, liquidity, Sortino, maximum drawdown, and tracking error. Portfolio concentration is shown separately as context; it does not change the ETF score. Yield and repo-rate comparison is shown only when NSE supplies both values, and is not scored for equity ETFs.</p>
-              <p><strong className="text-foreground">BUY</strong> means the ETF fits your comfort level and adding a small amount would keep your overall investments about as safe, or safer. <strong className="text-foreground">WATCH</strong> means wait: it is a close call, hard to trade, or would not help your overall risk. <strong className="text-foreground">AVOID</strong> means it is much riskier than you said you are comfortable with.</p>
-              <p>If the overall market looks gloomy, a BUY may be held back to WATCH. This is a screening aid, not personal investment advice.</p>
-            </div>
-          </details>
-          <p className="mt-2 text-[10px] text-market-slate">
-            Only equity ETFs with “Smallcap” or “Small Cap” in the underlying name are rated during this test.
-          </p>
             </section>
           </TabsContent>
         </Tabs>
@@ -1439,15 +1574,17 @@ function Dashboard() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-3">
                 <span className="font-display text-xl">{selectedRec?.symbol || selectedRec?.stock_symbol}</span>
-                <span className={`rounded px-2 py-0.5 font-mono text-xs ring-1 ${getRecommendationColor(selectedRec?.recommendation)}`}>
-                  {selectedRec?.recommendation?.toUpperCase()}
-                </span>
+                {selectedRec?.recommendation && (
+                  <span className={`rounded px-2 py-0.5 font-mono text-xs ring-1 ${getRecommendationColor(selectedRec.recommendation === "NOT RATED" ? undefined : selectedRec.recommendation)}`}>
+                    {selectedRec.recommendation.toUpperCase()}
+                  </span>
+                )}
                 {plainAction(selectedRec?.recommendation) && (
                   <span className="text-xs font-normal text-market-slate">{plainAction(selectedRec?.recommendation)}</span>
                 )}
               </DialogTitle>
               <DialogDescription className="text-xs text-market-slate">
-                Analysis generated {shortDate(selectedRec?.created_at) || "recently"}
+                Analysis generated {shortDate(selectedRec?.created_at || selectedRec?.updated_at) || "recently"}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">

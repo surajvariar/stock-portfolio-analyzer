@@ -12,36 +12,46 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-from backend.market_hours import drop_incomplete_series
-from backend.recommendation_agent import generate_ollama_recommendation
-from backend.risk_scoring.beta_calculator import (
-    beta_risk_score,
-    estimate_beta,
-    to_date_indexed,
-)
-from backend.risk_scoring.composite_risk_score import composite_risk_label
-from backend.risk_scoring.liquidity_flagger import (
+from market_hours import drop_incomplete_series
+from recommendation_agent import generate_ollama_recommendation
+from risk_scoring.beta_calculator import beta_risk_score, estimate_beta, to_date_indexed
+from risk_scoring.composite_risk_score import composite_risk_label
+from risk_scoring.liquidity_flagger import (
     liquidity_flag,
     liquidity_risk_score,
     median_daily_turnover,
 )
-from backend.risk_scoring.volatility_calculator import (
+from risk_scoring.volatility_calculator import (
     annualized_volatility,
     volatility_risk_score,
 )
 
 logger = logging.getLogger(__name__)
 
+NSE_HOME_URL = "https://www.nseindia.com"
 NSE_ETF_URL = "https://www.nseindia.com/api/etf"
+NSE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/market-data/exchange-traded-funds-etf",
+}
 ETF_HISTORY_DAYS = 1095
 ETF_ANALYSIS_WORKERS = max(1, int(os.getenv("ETF_ANALYSIS_WORKERS", "4")))
+# Tracking error is still computed and returned for display, but weighted at 0.0
+# when the supplied benchmark is the large-cap Nifty 50 rather than the ETF's
+# own small-cap underlying index.
 ETF_RISK_WEIGHTS = {
-    "volatility": 1 / 6,
-    "beta": 1 / 6,
-    "liquidity": 1 / 6,
-    "sortino": 1 / 6,
-    "max_drawdown": 1 / 6,
-    "tracking_error": 1 / 6,
+    "volatility": 0.20,
+    "beta": 0.20,
+    "liquidity": 0.20,
+    "sortino": 0.20,
+    "max_drawdown": 0.20,
+    "tracking_error": 0.0,
 }
 # Scanning every ETF through the language model is slow; the plain-language
 # templates are used unless this is switched on.
@@ -108,17 +118,16 @@ def normalize_nse_etf(record: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def fetch_nse_etf_universe() -> tuple[list[dict[str, Any]], str | None]:
-    response = requests.get(
-        NSE_ETF_URL,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://www.nseindia.com/market-data/exchange-traded-funds-etf",
-        },
-        timeout=20,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    with requests.Session() as session:
+        session.headers.update(NSE_HEADERS)
+        try:
+            session.get(NSE_HOME_URL, timeout=10)
+        except requests.RequestException:
+            logger.debug("NSE homepage cookie warmup failed; attempting ETF API directly.")
+        response = session.get(NSE_ETF_URL, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+
     records = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(records, list):
         raise TypeError("NSE ETF response did not contain a data list.")
@@ -150,14 +159,24 @@ PLAIN_NOT_ENOUGH_HISTORY = "There is not enough price history to rate it fairly 
 PLAIN_NO_PRICE_DATA = "We could not get its price data right now, so it was not rated."
 
 
-def _sortino_ratio(prices: pd.Series, window: int = 252, min_observations: int = 60) -> float | None:
+def _sortino_ratio(
+    prices: pd.Series,
+    window: int = 252,
+    min_observations: int = 60,
+    annual_mar_pct: float = 0.0,
+) -> float | None:
     returns = prices.dropna().pct_change().dropna().tail(window)
     if len(returns) < min_observations:
         return None
-    downside_deviation = float(returns.clip(upper=0).pow(2).mean() ** 0.5)
-    if not math.isfinite(downside_deviation) or downside_deviation == 0:
+    daily_mar = (1.0 + (annual_mar_pct or 0.0) / 100.0) ** (1.0 / 252.0) - 1.0
+    excess_returns = returns - daily_mar
+    downside_deviation = float(excess_returns.clip(upper=0).pow(2).mean() ** 0.5)
+    if not math.isfinite(downside_deviation):
         return None
-    ratio = float(returns.mean() / downside_deviation * (252**0.5))
+    mean_excess = float(excess_returns.mean())
+    if downside_deviation == 0:
+        return 10.0 if mean_excess > 0 else 0.0
+    ratio = float(mean_excess / downside_deviation * (252**0.5))
     return ratio if math.isfinite(ratio) else None
 
 
@@ -228,6 +247,7 @@ def score_equity_etf(
     *,
     symbol: str = "This ETF",
     market_sentiment_label: str | None = None,
+    repo_rate_pct: float | None = None,
     use_llm: bool = False,
 ) -> dict[str, Any]:
     volatility = annualized_volatility(prices)
@@ -247,7 +267,7 @@ def score_equity_etf(
         }
 
     is_illiquid = liquidity_flag(median_turnover)
-    sortino = _sortino_ratio(prices)
+    sortino = _sortino_ratio(prices, annual_mar_pct=repo_rate_pct or 0.0)
     max_drawdown = _max_drawdown_pct(prices)
     tracking_error = _tracking_error_pct(prices, market_returns)
     risk_components = {
@@ -331,6 +351,7 @@ def analyze_equity_etfs(
             history = fetch_etf_market_history(record["symbol"])
             prices = history["Close"]
             median_turnover = median_daily_turnover(prices, history["Volume"])
+            repo_rate_pct = _number(record.get("repo_rate_pct"))
             result = score_equity_etf(
                 prices,
                 market_returns,
@@ -339,11 +360,11 @@ def analyze_equity_etfs(
                 portfolio_summary,
                 symbol=record["symbol"],
                 market_sentiment_label=market_sentiment_label,
+                repo_rate_pct=repo_rate_pct,
                 use_llm=ETF_USE_LLM,
             )
             result["median_daily_turnover"] = median_turnover
             yield_pct = _number(record.get("yield_pct"))
-            repo_rate_pct = _number(record.get("repo_rate_pct"))
             last_price = _number(record.get("last_price"))
             inav = _number(record.get("inav"))
             result["yield_repo_gap_pct"] = (

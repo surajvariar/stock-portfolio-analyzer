@@ -157,8 +157,9 @@ def ensure_schema() -> None:
     with _schema_lock:
         if _schema_ready:
             return
-        for statement in SCHEMA_STATEMENTS:
-            execute(statement)
+        with get_db_connection() as conn:
+            for statement in SCHEMA_STATEMENTS:
+                conn.execute(statement)
         _schema_ready = True
 
 
@@ -181,15 +182,17 @@ def mark_interrupted_runs() -> int:
 # --- kite session -----------------------------------------------------------
 def save_kite_access_token(token: str) -> None:
     # Login must not depend on any other table existing, so only this table is ensured.
-    execute(KITE_SESSIONS_DDL)
-    execute("INSERT INTO kite_sessions (access_token) VALUES (%s)", (token,))
+    with get_db_connection() as conn:
+        conn.execute(KITE_SESSIONS_DDL)
+        conn.execute("INSERT INTO kite_sessions (access_token) VALUES (%s)", (token,))
 
 
 def get_latest_kite_access_token() -> str | None:
-    execute(KITE_SESSIONS_DDL)
-    row = fetch_one(
-        "SELECT access_token FROM kite_sessions ORDER BY generated_at DESC, id DESC LIMIT 1"
-    )
+    with get_db_connection() as conn:
+        conn.execute(KITE_SESSIONS_DDL)
+        row = conn.execute(
+            "SELECT access_token FROM kite_sessions ORDER BY generated_at DESC, id DESC LIMIT 1"
+        ).fetchone()
     return row["access_token"] if row else None
 
 

@@ -6,7 +6,13 @@ If an optional heavy dependency is not installed, a MagicMock stands in for it
 
 import importlib
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
+
+ROOT = Path(__file__).resolve().parents[1]
+for entry in (str(ROOT), str(ROOT / "backend")):
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
 
 for name in (
     "psycopg",
